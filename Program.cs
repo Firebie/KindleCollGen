@@ -15,7 +15,20 @@ namespace KindleCollGen
     static readonly string bookExtensions = "*.mobi";
     static readonly string collFormat = "{0} * {1}";
     static readonly string deviceDocsPath = "/mnt/us/documents";
-    
+    static readonly string collectionLocaleName = "@en-GB";
+
+    static readonly string renames = ", Лоренс Джордж=, Л. Дж.;, Лоис МакМастер=, Л. М.;"
+      + ", Дэвид =, Д.;, Филип=, Ф.;, Виктор=, В.;, Эрик=, Э.;, Роберт=, Р.;, Дилэни=, Д.;"
+      + ", Клемент=, К.;";
+
+    class Rename
+    {
+      public string From;
+      public string To;
+    }
+
+    static List<Rename> Renames = new List<Rename>();
+
     static int Main(string[] args)
     {
       try
@@ -30,6 +43,16 @@ namespace KindleCollGen
         string docs = root + "\\documents";
         if (!Directory.Exists(docs))
           throw new ApplicationException("Directory '{0}' doesn't exists!".Args(docs));
+
+        if (!string.IsNullOrWhiteSpace(renames))
+        {
+          foreach (string item in renames.Split(new char[] { ';' }))
+          {
+            string[] parts = item.Split(new char[] { '=' });
+            if (parts.Length == 2)
+              Renames.Add(new Rename { From = parts[0], To = parts[1] });
+          }
+        }
 
         var collections = new Dictionary<string, Collection>();
         
@@ -55,6 +78,15 @@ namespace KindleCollGen
       return 0;
     }
 
+    static string RenameName(string text)
+    {
+      var sb = new StringBuilder(text);
+
+      foreach (Rename item in Renames)
+        sb.Replace(item.From, item.To);
+
+      return sb.ToString();
+    }
     static void CollectAuthorSeries(string path, string devicePath, string name, HashAlgorithm ha, Dictionary<string, Collection> collections)
     {
       if (!string.IsNullOrWhiteSpace(name))
@@ -64,7 +96,7 @@ namespace KindleCollGen
         {
           if (coll == null)
           {
-            string fullName = name + "@en-GB";
+            string fullName = RenameName(name) + collectionLocaleName;
             if (!collections.TryGetValue(fullName, out coll))
             {
               coll = new Collection();
@@ -72,8 +104,10 @@ namespace KindleCollGen
             }
           }
 
-          byte[] utf8Bytes = Encoding.UTF8.GetBytes(devicePath + "/" + Path.GetFileName(book));
-          coll.items.Add("*" + string.Join(string.Empty, ha.ComputeHash(utf8Bytes).Select(i => i.ToString("x2")).ToArray()));
+          string deviceFilePath = devicePath + "/" + Path.GetFileName(book);
+          byte[] utf8Bytes = Encoding.UTF8.GetBytes(deviceFilePath);
+          string hash = "*" + string.Join(string.Empty, ha.ComputeHash(utf8Bytes).Select(i => i.ToString("x2")).ToArray());
+          coll.items.Add(hash);
         }
       }
 
