@@ -56,8 +56,8 @@ namespace KindleCollGen
 
         var collections = new Dictionary<string, Collection>();
         
-        using (var cryptoProvider = new SHA1CryptoServiceProvider())
-          CollectAuthorSeries(docs, deviceDocsPath, string.Empty, cryptoProvider, collections);
+        using (var ha = new SHA1CryptoServiceProvider())
+          CollectAuthorSeries(docs, deviceDocsPath, string.Empty, string.Empty, ha, collections);
 
         string collFile = root + @"\system\collections.json";
 
@@ -65,8 +65,11 @@ namespace KindleCollGen
         foreach (Collection coll in collections.Values)
           coll.lastAccess = lastAccess;
 
-        var settings = new JsonSerializerSettings();
-        settings.Formatting = Formatting.Indented;
+        var settings = new JsonSerializerSettings
+        {
+          Formatting = Formatting.Indented
+        };
+
         File.WriteAllText(collFile, JsonConvert.SerializeObject(collections, settings));
       }
       catch (System.Exception ex)
@@ -87,20 +90,27 @@ namespace KindleCollGen
 
       return sb.ToString();
     }
-    static void CollectAuthorSeries(string path, string devicePath, string name, HashAlgorithm ha, Dictionary<string, Collection> collections)
+    
+    static void CollectAuthorSeries(
+      string localPath,
+      string devicePath,
+      string name,
+      string author,
+      HashAlgorithm ha,
+      Dictionary<string, Collection> collections)
     {
       if (!string.IsNullOrWhiteSpace(name))
       {
+        string collName = RenameName(name) + collectionLocaleName;
         Collection coll = null;
-        foreach (string book in Directory.GetFiles(path, bookExtensions, SearchOption.TopDirectoryOnly))
+        foreach (string book in Directory.GetFiles(localPath, bookExtensions, SearchOption.TopDirectoryOnly))
         {
           if (coll == null)
           {
-            string fullName = RenameName(name) + collectionLocaleName;
-            if (!collections.TryGetValue(fullName, out coll))
+            if (!collections.TryGetValue(collName, out coll))
             {
               coll = new Collection();
-              collections.Add(fullName, coll);
+              collections.Add(collName, coll);
             }
           }
 
@@ -109,12 +119,29 @@ namespace KindleCollGen
           string hash = "*" + string.Join(string.Empty, ha.ComputeHash(utf8Bytes).Select(i => i.ToString("x2")).ToArray());
           coll.items.Add(hash);
         }
+
+        if (coll != null && coll.items.Count > 0 && !string.IsNullOrWhiteSpace(author))
+        {
+          string authorCollName = RenameName(author) + collectionLocaleName;
+          if (authorCollName != collName)
+          {
+            Collection authorColl = null;
+            if (!collections.TryGetValue(authorCollName, out authorColl))
+            {
+              authorColl = new Collection();
+              collections.Add(authorCollName, authorColl);
+            }
+
+            authorColl.items.AddRange(coll.items);
+          }
+        }
       }
 
-      foreach (string subName in Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly))
+      foreach (string subName in Directory.GetDirectories(localPath, "*", SearchOption.TopDirectoryOnly))
       {
         string folder = Path.GetFileName(subName);
-        CollectAuthorSeries(subName, devicePath + "/" + folder, string.IsNullOrWhiteSpace(name) ? folder : collFormat.Args(name, folder), ha, collections);
+        string auth = string.IsNullOrWhiteSpace(author) ? folder : author;
+        CollectAuthorSeries(subName, devicePath + "/" + folder, string.IsNullOrWhiteSpace(name) ? folder : collFormat.Args(name, folder), auth, ha, collections);
       }
     }
   }
